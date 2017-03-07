@@ -1,0 +1,40 @@
+#********************************************************* {COPYRIGHT-TOP} ***
+# Licensed Materials - Property of IBM
+# 5725-L30, 5725-Z22
+#
+# (C) Copyright IBM Corporation 2017, 2016
+#
+# All Rights Reserved.
+# US Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#********************************************************* {COPYRIGHT-END} ***
+# Template is based on https://github.com/kubernetes/kubernetes/blob/master/cluster/saltbase/salt/kubelet/kubelet.service
+
+[Unit]
+Description=Kubernetes Kubelet Server
+Documentation=https://github.com/kubernetes/kubernetes
+
+[Service]
+EnvironmentFile=-/etc/sysconfig/kubelet
+ExecStart=/usr/bin/kubelet \
+  --client-ca-file=/etc/kubernetes/ssl/ca.pem \
+  --tls-cert-file=/etc/kubernetes/ssl/kubelet.pem \
+  --tls-private-key-file=/etc/kubernetes/ssl/kubelet-key.pem \
+  --config=/etc/kubernetes/manifests \
+  --register-node=true \
+  --api-servers="{% for host in groups['master'] %}https://{{hostvars[host]['ansible_' + k8s.traffic_iface]['ipv4']['address']}}:{{k8s.apiserver_port}},{% endfor %}" \
+  --cluster_dns={{k8s.dns_service_ip}} \
+  --cluster_domain={{k8s.cluster_domain}} \
+  --allow-privileged=true \
+  --enable-debugging-handlers=true \
+  --port=10250 \
+  --network-plugin=cni \
+  --cni-conf-dir=/etc/cni/net.d \
+  --hostname-override={{hostvars[inventory_hostname]['ansible_' + k8s.traffic_iface]['ipv4']['address']}}
+Restart=always
+RestartSec=2s
+StartLimitInterval=0
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

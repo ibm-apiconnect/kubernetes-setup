@@ -1,0 +1,44 @@
+#********************************************************* {COPYRIGHT-TOP} ***
+# Licensed Materials - Property of IBM
+# 5725-L30, 5725-Z22
+#
+# (C) Copyright IBM Corporation 2017, 2016
+#
+# All Rights Reserved.
+# US Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#********************************************************* {COPYRIGHT-END} ***
+# Template is based on https://github.com/kubernetes/contrib/blob/master/ansible/roles/etcd/files/etcd.service
+
+[Unit]
+Description=Etcd Server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/lib/etcd/
+EnvironmentFile=-/etc/etcd/etcd.conf
+EnvironmentFile=-/etc/default/etcd
+User=etcd
+ExecStart=/usr/bin/etcd \
+    --name="etcd-{{inventory_hostname}}" \
+    --initial-cluster="{% for host in groups['etcd'] %}etcd-{{host}}=https://{{hostvars[host]['ansible_' + k8s.traffic_iface]['ipv4']['address']}}:2380,{% endfor %}" \
+    --listen-peer-urls="https://{{hostvars[inventory_hostname]['ansible_' + k8s.traffic_iface]['ipv4']['address']}}:2380" \
+    --initial-advertise-peer-urls="https://{{hostvars[inventory_hostname]['ansible_' + k8s.traffic_iface]['ipv4']['address']}}:2380" \
+    --advertise-client-urls="https://{{hostvars[inventory_hostname]['ansible_' + k8s.traffic_iface]['ipv4']['address']}}:2379" \
+    --listen-client-urls="https://{{hostvars[inventory_hostname]['ansible_' + k8s.traffic_iface]['ipv4']['address']}}:2379,https://127.0.0.1:2379" \
+    --data-dir=/var/lib/etcd/ \
+    --trusted-ca-file="/etc/etcd/ssl/ca.pem" \
+    --cert-file="/etc/etcd/ssl/etcd.pem" \
+    --key-file="/etc/etcd/ssl/etcd-key.pem" \
+    --peer-cert-file="/etc/etcd/ssl/etcd-peer-{{hostvars[inventory_hostname].inventory_hostname_short}}.pem" \
+    --peer-key-file="/etc/etcd/ssl/etcd-peer-{{hostvars[inventory_hostname].inventory_hostname_short}}-key.pem" \
+    --peer-trusted-ca-file="/etc/etcd/ssl/ca.pem" \
+    --client-cert-auth \
+    --peer-client-cert-auth \
+    --initial-cluster-state=new
+Restart=on-failure
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

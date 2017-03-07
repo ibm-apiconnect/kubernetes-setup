@@ -1,0 +1,18 @@
+{
+    "CN": "{{hostvars[item.item].inventory_hostname}}",
+    "hosts": [
+        "{{hostvars[item.item].inventory_hostname}}", "{{hostvars[item.item].inventory_hostname_short}}", "{{hostvars[item.item]['ansible_' + k8s.traffic_iface ]['ipv4']['address']}}"
+    ],
+    "key": {
+        "algo": "rsa",
+        "size": 2048
+    },
+    "names": [
+        {
+            "C": "US",
+            "L": "CA",
+            "ST": "San Francisco"
+        }
+    ]
+}
+

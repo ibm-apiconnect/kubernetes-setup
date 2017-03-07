@@ -1,0 +1,30 @@
+#********************************************************* {COPYRIGHT-TOP} ***
+# Licensed Materials - Property of IBM
+# 5725-L30, 5725-Z22
+#
+# (C) Copyright IBM Corporation 2017, 2016
+#
+# All Rights Reserved.
+# US Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#********************************************************* {COPYRIGHT-END} ***
+---
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority: /etc/kubernetes/ssl/ca.pem
+    server: https://{{k8s.apiserver_lb}}:{{k8s.apiserver_port}}
+  name: mycluster
+contexts:
+- context:
+    cluster: mycluster
+    user: proxy
+  name: mycontext
+current-context: mycontext
+kind: Config
+preferences: {}
+users:
+- name: proxy
+  user:
+    client-certificate: /etc/kubernetes/ssl/proxy.pem
+    client-key: /etc/kubernetes/ssl/proxy-key.pem

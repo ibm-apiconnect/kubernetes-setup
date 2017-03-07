@@ -1,0 +1,64 @@
+#********************************************************* {COPYRIGHT-TOP} ***
+# Licensed Materials - Property of IBM
+# 5725-L30, 5725-Z22
+#
+# (C) Copyright IBM Corporation 2017, 2016
+#
+# All Rights Reserved.
+# US Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#********************************************************* {COPYRIGHT-END} ***
+---
+- hosts: master
+  tasks:
+    - name: k8s Master keys
+      copy: src="../../certs/{{item}}" dest="/etc/kubernetes/ssl/{{item}}" owner=root group=root mode=0600
+      with_items:
+        - apiserver.pem
+        - apiserver-key.pem
+        - scheduler.pem
+        - scheduler-key.pem
+        - controller.pem
+        - controller-key.pem
+        - proxy.pem
+        - proxy-key.pem
+        - ca-key.pem
+    - name: k8s Client keys
+      copy: src="../../certs/{{item}}" dest="/root/.kube/{{item}}" owner=root group=root mode=0600
+      with_items:
+        - ca.pem
+        - admin.pem
+        - admin-key.pem
+    - name: Creates k8s manifests dir
+      file: path="/etc/kubernetes/manifests" state=directory owner=root group=root mode=0775
+
+    - name: ABAC auth file
+      template: src="templates/authorization-abac.jsonl.j2" dest="/etc/kubernetes/abac-auth.jsonl" owner=root group=root mode=0644
+    - name: apiserver kubelet template
+      template: src="templates/apiserver.manifest.j2" dest="/etc/kubernetes/manifests/apiserver.manifest" owner=root group=root mode=0644
+
+    - name: Creates server keys directory
+      file: path="/var/lib/kube-scheduler" state=directory owner=root group=root mode=0775
+    - name: Setup kubeconfig for scheduler
+      template: src="templates/scheduler-config.j2" dest="/var/lib/kube-scheduler/kubeconfig" owner=root group=root mode=0644
+    - name: scheduler kubelet template
+      template: src="templates/scheduler.manifest.j2" dest="/etc/kubernetes/manifests/scheduler.manifest" owner=root group=root mode=0644
+
+    - name: Creates controller keys directory
+      file: path="/var/lib/kube-controller" state=directory owner=root group=root mode=0775
+    - name: Setup kubeconfig for controller
+      template: src="templates/controller-config.j2" dest="/var/lib/kube-controller/kubeconfig" owner=root group=root mode=0644
+    - name: controller kubelet template
+      template: src="templates/controller.manifest.j2" dest="/etc/kubernetes/manifests/controller.manifest" owner=root group=root mode=0644
+
+    - name: restart kubelet
+      systemd: name=kubelet state=started
+    - systemd: name=kubelet state=restarted
+
+    - name: taint master nodes
+      command: "/usr/bin/kubectl taint nodes {{hostvars[inventory_hostname]['ansible_' + k8s.traffic_iface].ipv4.address}} CriticalAddonsOnly=true:NoSchedule --overwrite"
+      when: inventory_hostname not in groups['worker']
+      retries: 600
+      delay: 1
+      register: result
+      until: result.rc == 0

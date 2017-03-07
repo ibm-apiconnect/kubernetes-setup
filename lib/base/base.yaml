@@ -1,0 +1,168 @@
+#********************************************************* {COPYRIGHT-TOP} ***
+# Licensed Materials - Property of IBM
+# 5725-L30, 5725-Z22
+#
+# (C) Copyright IBM Corporation 2017, 2016
+#
+# All Rights Reserved.
+# US Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#********************************************************* {COPYRIGHT-END} ***
+---
+- hosts:
+    - master
+    - worker
+    - etcd
+  vars:
+    ipv4_host: "{{ k8s.pod_network | ipv4('host/prefix') }}"
+    public_iface_net_mask: "{{ hostvars[inventory_hostname]['ansible_' + k8s.public_iface].ipv4.network }}/{{ hostvars[inventory_hostname]['ansible_' + k8s.public_iface].ipv4.netmask }}"
+    traffic_iface_net_mask: "{{ hostvars[inventory_hostname]['ansible_' + k8s.traffic_iface].ipv4.network }}/{{ hostvars[inventory_hostname]['ansible_' + k8s.traffic_iface].ipv4.netmask }}"
+  tasks:
+    - name: Install python-netaddr
+      pip: name=netaddr
+    - block:
+      - file: path="/etc/kubernetes/ssl" state=directory owner=root group=root mode=0755
+      - name: k8s CA cert
+        copy: src="../../certs/ca.pem" dest="/etc/kubernetes/ssl/ca.pem" owner=root group=root mode=0644
+      - name: k8s etcd client keys
+        copy: src="../../certs/{{item}}" dest="/etc/kubernetes/ssl/{{item}}" owner=root group=root mode=0600
+        with_items:
+          - etcd-client-key.pem
+          - etcd-client.pem
+
+      - stat: path="/usr/bin/etcdctl"
+        register: etcd_exists
+      - block:
+        - name: get etcd binaries
+          unarchive: src="https://github.com/coreos/etcd/releases/download/v{{k8s.etcd_version}}/etcd-v{{k8s.etcd_version}}-linux-amd64.tar.gz" creates=true remote_src=yes dest=/tmp/
+        - name: move binaries
+          copy: src="/tmp/etcd-v{{k8s.etcd_version}}-linux-amd64/etcdctl" dest="/usr/bin/etcdctl" mode=0755 owner=root group=root remote_src=True
+        when: etcd_exists.stat.exists == False
+
+      - stat: path="/usr/bin/flanneld"
+        register: flanneld_exists
+      - name: get flannel binaries
+        get_url: url="https://github.com/coreos/flannel/releases/download/v0.7.0/flanneld-amd64" dest=/usr/bin/flanneld mode=0755 owner=root group=root
+        when: flanneld_exists.stat.exists == False
+      - name: flannel service
+        template: src="templates/flannel/flanneld.service.j2" dest="/etc/systemd/system/flanneld.service" owner=root group=root mode=0644
+      - name: flannel config
+        lineinfile: dest="/etc/default/flanneld" state=present line="{{ item.key }}={{ item.value }}" regexp="{{ item.key }}=" owner=root group=root mode=0644 create=yes
+        with_dict:
+          FLANNELD_ETCD_ENDPOINTS: "{% for host in groups['etcd'] %}https://{{hostvars[host]['ansible_' + k8s.traffic_iface]['ipv4']['address']}}:2379,{% endfor %}"
+          FLANNELD_ETCD_PREFIX: "coreos.com/network/"
+          FLANNELD_ETCD_CERTFILE: "/etc/kubernetes/ssl/etcd-client.pem"
+          FLANNELD_ETCD_KEYFILE: "/etc/kubernetes/ssl/etcd-client-key.pem"
+          FLANNELD_ETCD_CAFILE: "/etc/kubernetes/ssl/ca.pem"
+          FLANNELD_IFACE: "{{k8s.traffic_iface}}"
+          FLANNEL_OPTIONS: "-ip-masq"
+      - name: Configure flannel network
+        command: |
+          etcdctl \
+            --cert-file /etc/kubernetes/ssl/etcd-client.pem \
+            --key-file=/etc/kubernetes/ssl/etcd-client-key.pem \
+            --ca-file /etc/kubernetes/ssl/ca.pem \
+            --endpoints "{% for host in groups['etcd'] %}https://{{hostvars[host]['ansible_' + k8s.traffic_iface]['ipv4']['address']}}:2379,{% endfor %}" \
+            set \
+            -- coreos.com/network/config '{"Network":"{{k8s.pod_network}}","Backend":{"Type":"vxlan"}}'
+        when: inventory_hostname in groups['master'][0]
+      - name: start flanneld
+        systemd: name=flanneld daemon_reload=yes enabled=yes
+
+      - name: Install netfilter-persistent package
+        apt: name=iptables-persistent state=installed
+
+    - block:
+      - name: Install docker.io
+        apt: name={{item}} state=installed
+        with_items:
+        - docker.io
+      - name: stop docker
+        service: name=docker state=stopped
+      - name: Install docker-py
+        pip: name=docker-py
+      - file: path="/etc/cni/net.d/" state=directory owner=root group=root mode=0775
+      - name: flannel-cli config
+        template: src="templates/flannel/cni.conf.j2" dest="/etc/cni/net.d/10-flannel.conf" mode=0755 owner=root group=root
+
+    - block:
+      - name: "Bring down docker0"
+        command: "ip link set dev docker0 down"
+        register: docker0_exists
+        ignore_errors: True
+      - name: stop docker
+        service: name=docker state=stopped
+        when: docker0_exists|succeeded
+      - name: Remove docker bridge
+        command: "{{item}}"
+        with_items:
+          - "brctl delbr docker0"
+          - "iptables -t nat -F"
+        when: docker0_exists|succeeded
+      - name: Update docker bridge setting
+        lineinfile: dest="/etc/default/docker" state=present line='DOCKER_NOFILE=1000000' regexp="DOCKER_NOFILE" owner=root group=root mode=0644 create=yes
+      - lineinfile: dest="/etc/default/docker" state=present line='DOCKER_OPT_BIP=""' regexp="DOCKER_OPT_BIP"
+      - lineinfile: dest="/etc/default/docker" state=present line='DOCKER_OPT_IPMASQ=""' regexp="DOCKER_OPT_IPMASQ"
+
+      - name: start docker
+        service: name=docker state=started
+
+      - name: save iptables
+        command: netfilter-persistent save
+
+    - block:
+      - stat: path=/usr/bin/kubelet
+        register: k8s_bins
+      - name: download k8s binaries
+        get_url: url="http://storage.googleapis.com/kubernetes-release/release/v{{k8s.version}}/bin/linux/amd64/{{item}}" dest="/usr/bin/{{item}}" mode=0755
+        with_items:
+        - kubelet
+        - kubectl
+        when: k8s_bins.stat.exists == False
+
+      - stat: path=/opt/cni/bin/flannel
+        register: cli_bins
+      - file: path="/opt/cni/bin/" state=directory owner=root group=root mode=0775
+      - name: download cni binaries
+        unarchive: src="https://github.com/containernetworking/cni/releases/download/v{{k8s.cni_version}}/cni-amd64-v{{k8s.cni_version}}.tgz" remote_src=true dest="/opt/cni/bin/" mode=0755
+        when: cli_bins.stat.exists == False
+
+      - name: kubelet service
+        template: src="templates/kubelet.service.j2" dest="/lib/systemd/system/kubelet.service" owner=root group=root mode=0644
+      - name: enable kubelet
+        systemd: name=kubelet daemon_reload=yes enabled=yes masked=no
+
+    - block:
+      - name: k8s Master keys
+        copy: src="../../certs/{{item}}" dest="/etc/kubernetes/ssl/{{item}}" owner=root group=root mode=0600
+        with_items:
+          - kubelet.pem
+          - kubelet-key.pem
+          - proxy.pem
+          - proxy-key.pem
+          - ca.pem
+      - name: Creates client directory
+        file: path="/root/.kube" state=directory owner=root group=root mode=0775
+
+    - block:
+      - file: path="/var/lib/kubelet" state=directory owner=root group=root mode=0775
+      - name: Setup local kube config
+        template: src="templates/client-config.j2" dest="/root/.kube/config" owner=root group=root mode=0644
+      - name: Setup kubeconfig for kubelet
+        template: src="templates/kubelet-config.j2" dest="/var/lib/kubelet/kubeconfig" owner=root group=root mode=0644
+
+
+    - block:
+      - name: pull hyperkube image
+        docker_image: name="gcr.io/google_containers/hyperkube:v{{k8s.version}}" state=present
+      - name: Creates k8s manifests dir
+        file: path="/etc/kubernetes/manifests" state=directory owner=root group=root mode=0775
+      - name: Creates proxy keys directory
+        file: path="/var/lib/kube-proxy" state=directory owner=root group=root mode=0775
+      - name: Setup kubeconfig for proxy
+        template: src="templates/proxy-config.j2" dest="/var/lib/kube-proxy/kubeconfig" owner=root group=root mode=0644
+      - name: proxy template
+        template: src="templates/proxy.manifest.j2" dest="/etc/kubernetes/manifests/proxy.manifest" owner=root group=root mode=0644
+
+    - name: Install socat for port-forwarding
+      apt: name=socat state=installed

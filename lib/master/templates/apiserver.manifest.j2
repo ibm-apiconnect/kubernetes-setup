@@ -1,0 +1,86 @@
+#********************************************************* {COPYRIGHT-TOP} ***
+# Licensed Materials - Property of IBM
+# 5725-L30, 5725-Z22
+#
+# (C) Copyright IBM Corporation 2017, 2016
+#
+# All Rights Reserved.
+# US Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#********************************************************* {COPYRIGHT-END} ***
+# Template is based on https://github.com/kubernetes/kubernetes/tree/master/cluster/images/hyperkube
+# and https://github.com/kubernetes/kubernetes/blob/master/cluster/saltbase/salt/kube-apiserver/kube-apiserver.manifest
+# API server flag docs https://kubernetes.io/docs/admin/kube-apiserver/
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: kube-apiserver
+  namespace: kube-system
+  labels:
+    tier: control-plane
+    component: kube-apiserver
+spec:
+  hostNetwork: true
+  containers:
+    - name: apiserver
+      image: "gcr.io/google_containers/hyperkube:v{{k8s.version}}"
+      resources:
+        requests:
+          cpu: 250m
+      command:
+        - /hyperkube
+        - apiserver
+        - "--advertise-address={{hostvars[inventory_hostname]['ansible_' + k8s.traffic_iface]['ipv4']['address']}}"
+        - "--secure-port={{k8s.apiserver_port}}"
+        - "--insecure-port=0"
+        - "--service-cluster-ip-range={{k8s.service_ip_range}}"
+        - "--etcd-servers={% for host in groups['etcd'] %}https://{{hostvars[host]['ansible_' + k8s.traffic_iface]['ipv4']['address']}}:2379,{% endfor %}"
+        - "--etcd-quorum-read"
+        - "--cert-dir=/etc/kubernetes/ssl"
+        - "--allow-privileged=true"
+        - "--anonymous-auth=false"
+
+        - "--tls-ca-file=/etc/kubernetes/ssl/ca.pem"
+        - "--tls-cert-file=/etc/kubernetes/ssl/apiserver.pem"
+        - "--tls-private-key-file=/etc/kubernetes/ssl/apiserver-key.pem"
+
+        - "--etcd-cafile=/etc/kubernetes/ssl/ca.pem"
+        - "--etcd-certfile=/etc/kubernetes/ssl/etcd-client.pem"
+        - "--etcd-keyfile=/etc/kubernetes/ssl/etcd-client-key.pem"
+
+        - "--client-ca-file=/etc/kubernetes/ssl/ca.pem"
+
+        - "--kubelet-certificate-authority=/etc/kubernetes/ssl/ca.pem"
+        - "--kubelet-client-certificate=/etc/kubernetes/ssl/apiserver.pem"
+        - "--kubelet-client-key=/etc/kubernetes/ssl/apiserver-key.pem"
+        - "--kubelet-https"
+
+        - "--service-account-key-file=/etc/kubernetes/ssl/apiserver.pem"
+
+        - "--admission-control=NamespaceLifecycle,LimitRanger,ServiceAccount,DefaultStorageClass,ResourceQuota{% if k8s.enable_pod_security_policy %},PodSecurityPolicy{% endif %}"
+        - "--runtime-config=extensions/v1beta1=true{% if k8s.enable_cron_jobs %},batch/v1=true{% endif %}{% if k8s.enable_rbac %},rbac.authorization.k8s.io/v1alpha1=true{% endif %}"
+        - --authorization-mode=ABAC{% if k8s.enable_rbac %},RBAC{% endif %}
+
+        - --authorization-policy-file=/etc/kubernetes/abac-auth.jsonl
+        - -v=6
+      ports:
+        - name: https
+          hostPort: {{k8s.apiserver_port}}
+          containerPort: {{k8s.apiserver_port}}
+      volumeMounts:
+        - name: etckubernetes
+          mountPath: /etc/kubernetes
+          readOnly: true
+      # livenessProbe:
+      #   httpGet:
+      #     scheme: HTTP
+      #     host: "127.0.0.1"
+      #     port: 8080
+      #     path: /healthz
+      #   initialDelaySeconds: 15
+      #   timeoutSeconds: 15
+  volumes:
+    - name: etckubernetes
+      hostPath:
+        path: /etc/kubernetes

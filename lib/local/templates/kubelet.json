@@ -1,0 +1,25 @@
+{
+    "CN": "kubelet",
+    "hosts": [
+{% for host in groups.master %}
+        "{{hostvars[host].inventory_hostname}}", "{{hostvars[host].inventory_hostname_short}}", "{{hostvars[host]['ansible_' + k8s.traffic_iface ]['ipv4']['address']}}","{{hostvars[host]['ansible_' + k8s.public_iface ]['ipv4']['address']}}",
+{% endfor %}
+{% for host in groups.worker %}
+        "{{hostvars[host].inventory_hostname}}", "{{hostvars[host].inventory_hostname_short}}", "{{hostvars[host]['ansible_' + k8s.traffic_iface ]['ipv4']['address']}}","{{hostvars[host]['ansible_' + k8s.public_iface ]['ipv4']['address']}}",
+{% endfor %}
+        "{{k8s.apiserver_lb}}",
+        "{{k8s.apiserver_server_ip}}"
+    ],
+    "key": {
+        "algo": "ecdsa",
+        "size": 256
+    },
+    "names": [
+        {
+            "C": "US",
+            "L": "CA",
+            "ST": "San Francisco"
+        }
+    ]
+}
+

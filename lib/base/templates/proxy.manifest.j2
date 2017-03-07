@@ -1,0 +1,62 @@
+#********************************************************* {COPYRIGHT-TOP} ***
+# Licensed Materials - Property of IBM
+# 5725-L30, 5725-Z22
+#
+# (C) Copyright IBM Corporation 2017, 2016
+#
+# All Rights Reserved.
+# US Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#********************************************************* {COPYRIGHT-END} ***
+# Template is based on https://github.com/kubernetes/kubernetes/blob/master/cluster/saltbase/salt/kube-proxy/kube-proxy.manifest
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-proxy
+  namespace: kube-system
+  # This annotation ensures that kube-proxy does not get evicted if the node
+  # supports critical pod annotation based priority scheme.
+  # Note that kube-proxy runs as a static pod so this annotation does NOT have
+  # any effect on rescheduler (default scheduler and rescheduler are not
+  # involved in scheduling kube-proxy).
+  annotations:
+    scheduler.alpha.kubernetes.io/critical-pod: ''
+  labels:
+    tier: node
+    component: kube-proxy
+spec:
+  hostNetwork: true
+  containers:
+  - name: kube-proxy
+    image: "gcr.io/google_containers/hyperkube:v{{k8s.version}}"
+    command:
+    - /hyperkube
+    - proxy
+    - "--master=https://{{k8s.apiserver_lb}}:{{k8s.apiserver_port}}"
+    - "--kubeconfig=/var/lib/kube-proxy/kubeconfig"
+    - "--cluster-cidr={{k8s.pod_network}}"
+    - --proxy-mode=iptables
+    - --masquerade-all
+    securityContext:
+      privileged: true
+    volumeMounts:
+    - mountPath: /etc/ssl/certs
+      name: etc-ssl-certs
+      readOnly: true
+    - mountPath: /etc/kubernetes/ssl
+      name: kubecerts
+      readOnly: true
+    - mountPath: /var/lib/kube-proxy/kubeconfig
+      name: kubeconfig
+      readOnly: false
+  volumes:
+  - hostPath:
+      path: /etc/kubernetes/ssl
+    name: kubecerts
+  - hostPath:
+      path: /etc/ssl/certs
+    name: etc-ssl-certs
+  - hostPath:
+      path: /var/lib/kube-proxy/kubeconfig
+    name: kubeconfig

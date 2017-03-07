@@ -1,0 +1,50 @@
+#********************************************************* {COPYRIGHT-TOP} ***
+# Licensed Materials - Property of IBM
+# 5725-L30, 5725-Z22
+#
+# (C) Copyright IBM Corporation 2017, 2016
+#
+# All Rights Reserved.
+# US Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#********************************************************* {COPYRIGHT-END} ***
+---
+- name: Gather host info
+  hosts: all
+
+- hosts: etcd
+  tasks:
+    - name: Install python-netaddr
+      pip: name=netaddr
+    - name: create etcd group
+      group: name=etcd state=present
+    - name: create etcd user
+      user: name=etcd state=present shell=/sbin/nologin groups=etcd system=yes
+    - file: path="/etc/etcd/ssl" state=directory owner=root group=etcd mode=0755
+    - name: CA cert
+      copy: src="../../certs/ca.pem" dest="/etc/etcd/ssl/ca.pem" owner=root group=etcd mode=0640
+    - name: etcd keys
+      copy: src="../../certs/{{item}}" dest="/etc/etcd/ssl/{{item}}" owner=root group=etcd mode=0640
+      with_items:
+        - etcd-peer-{{hostvars[inventory_hostname].inventory_hostname_short}}.pem
+        - etcd-peer-{{hostvars[inventory_hostname].inventory_hostname_short}}-key.pem
+        - etcd.pem
+        - etcd-key.pem
+    - stat: path="/usr/bin/etcd"
+      register: etcd_exists
+    - block:
+      - name: get etcd binaries
+        unarchive: src="https://github.com/coreos/etcd/releases/download/v{{k8s.etcd_version}}/etcd-v{{k8s.etcd_version}}-linux-amd64.tar.gz" creates=true remote_src=yes dest=/tmp/
+      - name: move binaries
+        copy: src="/tmp/etcd-v{{k8s.etcd_version}}-linux-amd64/{{item}}" dest="/usr/bin/{{item}}" mode=0755 owner=root group=root remote_src=True
+        with_items:
+          - "etcd"
+          - "etcdctl"
+      when: etcd_exists.stat.exists == False
+    - name: create etcd dirs
+      file: path="/var/lib/etcd/" state=directory owner=etcd group=etcd mode=0775
+    - name: etcd service
+      template: src="templates/etcd.service.j2" dest="/etc/systemd/system/etcd.service" owner=root group=root mode=0644
+    - systemd: name=etcd state=stopped daemon_reload=yes enabled=yes
+    - name: start etcd
+      systemd: name=etcd state=started

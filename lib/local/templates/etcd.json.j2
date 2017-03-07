@@ -1,0 +1,21 @@
+{
+    "CN": "etcd",
+    "hosts": [
+{% for host in groups.etcd %}
+        "{{hostvars[host].inventory_hostname}}", "{{hostvars[host].inventory_hostname_short}}", "{{hostvars[host]['ansible_' + k8s.traffic_iface ]['ipv4']['address']}}",
+{% endfor %}
+        "{{k8s.apiserver_lb}}"
+    ],
+    "key": {
+        "algo": "rsa",
+        "size": 2048
+    },
+    "names": [
+        {
+            "C": "US",
+            "L": "CA",
+            "ST": "San Francisco"
+        }
+    ]
+}
+

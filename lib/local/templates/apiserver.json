@@ -1,0 +1,23 @@
+{
+    "CN": "apiserver",
+    "hosts": [
+{% for host in groups.master %}
+        "{{hostvars[host].inventory_hostname}}", "{{hostvars[host].inventory_hostname_short}}", "{{hostvars[host]['ansible_' + k8s.traffic_iface ]['ipv4']['address']}}","{{hostvars[host]['ansible_' + k8s.public_iface ]['ipv4']['address']}}",
+{% endfor %}
+        "{{k8s.apiserver_lb}}",
+        "{{k8s.apiserver_server_ip}}",
+        "{{k8s.service_ip}}",
+        "localhost", "127.0.0.1"
+    ],
+    "key": {
+        "algo": "rsa",
+        "size": 2048
+    },
+    "names": [
+        {
+            "C": "US",
+            "L": "CA",
+            "ST": "San Francisco"
+        }
+    ]
+}

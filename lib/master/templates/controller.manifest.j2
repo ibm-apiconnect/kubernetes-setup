@@ -1,0 +1,69 @@
+#********************************************************* {COPYRIGHT-TOP} ***
+# Licensed Materials - Property of IBM
+# 5725-L30, 5725-Z22
+#
+# (C) Copyright IBM Corporation 2017, 2016
+#
+# All Rights Reserved.
+# US Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#********************************************************* {COPYRIGHT-END} ***
+# Template is based on https://github.com/kubernetes/kubernetes/tree/master/cluster/images/hyperkube
+# and https://github.com/kubernetes/kubernetes/blob/master/cluster/saltbase/salt/kube-controller-manager/kube-controller-manager.manifest
+# API server flag docs https://kubernetes.io/docs/admin/kube-apiserver/
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: kube-controller-manager
+  namespace: kube-system
+  labels:
+    tier: control-plane
+    component: kube-controller-manager
+spec:
+  hostNetwork: true
+  containers:
+    - name: kube-controller-manager
+      image: "gcr.io/google_containers/hyperkube:v{{k8s.version}}"
+      resources:
+        requests:
+          cpu: 200m
+      command:
+        - /hyperkube
+        - controller-manager
+        - "--cluster-name={{k8s.cluster_name}}"
+        - "--cluster-signing-cert-file=/etc/kubernetes/ssl/ca.pem"
+        - "--cluster-signing-key-file=/etc/kubernetes/ssl/ca-key.pem"
+
+        # to add ca.crt to service accounts
+        - "--root-ca-file=/etc/kubernetes/ssl/ca.pem"
+        # to sign service account token
+        - "--service-account-private-key-file=/etc/kubernetes/ssl/apiserver-key.pem"
+
+        - "--kubeconfig=/var/lib/kube-controller/kubeconfig"
+
+        - --leader-elect=true
+
+        - "--cluster-cidr={{k8s.pod_network}}"
+        - "--node-cidr-mask-size=24"
+      volumeMounts:
+        - name: etckubernetes
+          mountPath: /etc/kubernetes
+          readOnly: true
+        - name: kubeconfig
+          mountPath: /var/lib/kube-controller/kubeconfig
+          readOnly: true
+      livenessProbe:
+        httpGet:
+          host: 127.0.0.1
+          port: 10252
+          path: /healthz
+        initialDelaySeconds: 15
+        timeoutSeconds: 15
+  volumes:
+    - name: kubeconfig
+      hostPath:
+        path: /var/lib/kube-controller/kubeconfig
+    - name: etckubernetes
+      hostPath:
+        path: /etc/kubernetes

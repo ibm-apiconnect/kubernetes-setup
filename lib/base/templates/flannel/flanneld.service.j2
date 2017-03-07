@@ -1,0 +1,17 @@
+# Template is based on https://github.com/kubernetes/contrib/blob/master/ansible/roles/flannel/templates/flanneld.service
+[Unit]
+Description=flannel is an etcd backed overlay network for containers
+After=network-online.target
+Wants=network-online.target
+After=etcd.service
+Before=docker.service
+
+[Service]
+Type=notify
+EnvironmentFile=-/etc/default/flanneld
+ExecStart=/usr/bin/flanneld $FLANNEL_OPTIONS -logtostderr
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+RequiredBy=docker.service

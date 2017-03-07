@@ -1,0 +1,138 @@
+#********************************************************* {COPYRIGHT-TOP} ***
+# Licensed Materials - Property of IBM
+# 5725-L30, 5725-Z22
+#
+# (C) Copyright IBM Corporation 2017, 2016
+#
+# All Rights Reserved.
+# US Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#********************************************************* {COPYRIGHT-END} ***
+---
+- name: gather all hosts information
+  hosts: all
+
+- hosts: localhost
+  become: false
+  vars:
+    cfssl: "cfssl_{% if ansible_distribution == 'MacOSX' %}darwin{% else %}linux{% endif %}-amd64"
+    cfssljson: "cfssljson_{% if ansible_distribution == 'MacOSX' %}darwin{% else %}linux{% endif %}-amd64"
+  tasks:
+    - file: path="../../certs" state=directory mode=0755
+    - stat: path="../../certs/{{cfssl}}"
+      register: cfssl_stat
+    - stat: path="../../certs/{{cfssljson}}"
+      register: cfssljson_stat
+    - name: get cfssl
+      get_url: url="https://pkg.cfssl.org/R1.2/{{cfssl}}" dest=../../certs/ mode=0755
+      when: cfssl_stat.stat.exists == False
+    - name: get cfssljson
+      get_url: url="https://pkg.cfssl.org/R1.2/{{cfssljson}}" dest=../../certs/ mode=0755
+      when: cfssljson_stat.stat.exists == False
+
+    - stat: path="../../certs/ca-key.pem"
+      register: ca_cert
+    - block:
+      - name: create CA certs
+        template: src="templates/ca-config.json" dest="../../certs/ca-config.json"
+      - template: src="templates/ca-csr.json" dest="../../certs/ca-csr.json"
+      - shell: "./{{cfssl}} gencert -initca ca-csr.json | ./{{cfssljson}} -bare ca -"
+        args:
+          chdir: "../../certs"
+      when: ca_cert.stat.exists == False
+
+    - stat: path="../../certs/apiserver-key.pem"
+      register: cert
+    - block:
+      - name: create apiserver certs
+        template: src="templates/apiserver.json" dest="../../certs/apiserver.json"
+      - shell: "./{{cfssl}} gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=peer apiserver.json | ./{{cfssljson}} -bare apiserver"
+        args:
+          chdir: "../../certs"
+      when: cert.stat.exists == False
+
+    - stat: path="../../certs/scheduler-key.pem"
+      register: cert
+    - block:
+      - name: create scheduler certs
+        template: src="templates/scheduler.json" dest="../../certs/scheduler.json"
+      - shell: "./{{cfssl}} gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=client scheduler.json | ./{{cfssljson}} -bare scheduler"
+        args:
+          chdir: "../../certs"
+      when: cert.stat.exists == False
+
+    - stat: path="../../certs/proxy-key.pem"
+      register: cert
+    - block:
+      - name: create proxy certs
+        template: src="templates/proxy.json" dest="../../certs/proxy.json"
+      - shell: "./{{cfssl}} gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=client proxy.json | ./{{cfssljson}} -bare proxy"
+        args:
+          chdir: "../../certs"
+      when: cert.stat.exists == False
+
+    - stat: path="../../certs/controller-key.pem"
+      register: cert
+    - block:
+      - name: create controller certs
+        template: src="templates/controller.json" dest="../../certs/controller.json"
+      - shell: "./{{cfssl}} gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=client controller.json | ./{{cfssljson}} -bare controller"
+        args:
+          chdir: "../../certs"
+      when: cert.stat.exists == False
+
+    - stat: path="../../certs/kubelet-key.pem"
+      register: cert
+    - block:
+      - name: create kubelet certs
+        template: src="templates/kubelet.json" dest="../../certs/kubelet.json"
+      - shell: "./{{cfssl}} gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=peer kubelet.json | ./{{cfssljson}} -bare kubelet"
+        args:
+          chdir: "../../certs"
+      when: cert.stat.exists == False
+
+    - stat: path="../../certs/etcd-key.pem"
+      register: cert
+    - block:
+      - name: create etcd certs
+        template: src="templates/etcd.json.j2" dest="../../certs/etcd.json"
+      - shell: "./{{cfssl}} gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=server etcd.json | ./{{cfssljson}} -bare etcd"
+        args:
+          chdir: "../../certs"
+      when: cert.stat.exists == False
+
+    - stat: path="../../certs/etcd-peer-{{hostvars[item].inventory_hostname_short}}-key.pem"
+      register: cert
+      with_items:
+        "{{groups.etcd}}"
+    - name: create etcd peer certs
+      template: src="templates/etcd-peer.json.j2" dest="../../certs/etcd-peer-{{hostvars[item.item].inventory_hostname_short}}.json"
+      when: item.stat.exists == false
+      with_items:
+        "{{cert.results}}"
+    - shell: "./{{cfssl}} gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=peer etcd-peer-{{hostvars[item.item].inventory_hostname_short}}.json | ./{{cfssljson}} -bare etcd-peer-{{hostvars[item.item].inventory_hostname_short}}"
+      args:
+        chdir: "../../certs"
+      when: item.stat.exists == False
+      with_items:
+        "{{cert.results}}"
+
+    - stat: path="../../certs/etcd-client.pem"
+      register: cert
+    - block:
+      - name: create etcd client certs
+        template: src="templates/etcd-client.json" dest="../../certs/etcd-client.json"
+      - shell: "./{{cfssl}} gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=client etcd-client.json | ./{{cfssljson}} -bare etcd-client"
+        args:
+          chdir: "../../certs"
+      when: cert.stat.exists == False
+
+    - stat: path="../../certs/admin-key.pem"
+      register: cert
+    - block:
+      - name: create admin certs
+        template: src="templates/admin.json" dest="../../certs/admin.json"
+      - shell: "./{{cfssl}} gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=client admin.json | ./{{cfssljson}} -bare admin"
+        args:
+          chdir: "../../certs"
+      when: cert.stat.exists == False

@@ -1,0 +1,8 @@
+---
+- include: lib/deps.yaml
+- include: lib/local/local.yaml
+- include: lib/etcd/etcd.yaml
+- include: lib/base/base.yaml
+- include: lib/master/master.yaml
+- include: lib/worker/worker.yaml
+- include: lib/addons/addons.yaml

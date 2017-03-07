@@ -1,0 +1,55 @@
+#********************************************************* {COPYRIGHT-TOP} ***
+# Licensed Materials - Property of IBM
+# 5725-L30, 5725-Z22
+#
+# (C) Copyright IBM Corporation 2017, 2016
+#
+# All Rights Reserved.
+# US Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#********************************************************* {COPYRIGHT-END} ***
+# Template is based on https://github.com/kubernetes/kubernetes/tree/master/cluster/images/hyperkube
+# and https://github.com/kubernetes/kubernetes/blob/master/cluster/saltbase/salt/kube-scheduler/kube-scheduler.manifest
+# API server flag docs https://kubernetes.io/docs/admin/kube-apiserver/
+kind: Pod
+apiVersion: v1
+metadata:
+  name: kube-scheduler
+  namespace: kube-system
+  labels:
+    tier: control-plane
+    component: kube-scheduler
+spec:
+  hostNetwork: true
+  containers:
+    - name: kube-scheduler
+      image: "gcr.io/google_containers/hyperkube:v{{k8s.version}}"
+      command:
+        - /hyperkube
+        - scheduler
+        - "--algorithm-provider=ClusterAutoscalerProvider"
+        - "--kubeconfig=/var/lib/kube-scheduler/kubeconfig"
+        - --master=https://{{k8s.apiserver_lb}}:{{k8s.apiserver_port}}
+        - "--leader-elect=true"
+      livenessProbe:
+        httpGet:
+          scheme: HTTP
+          host: 127.0.0.1
+          port: 10251
+          path: /healthz
+        initialDelaySeconds: 15
+        timeoutSeconds: 15
+      volumeMounts:
+        - name: kubeconfig
+          mountPath: /var/lib/kube-scheduler/kubeconfig
+          readOnly: true
+        - name: etckubernetesssl
+          mountPath: /etc/kubernetes/ssl
+          readOnly: true
+  volumes:
+    - name: kubeconfig
+      hostPath:
+        path: /var/lib/kube-scheduler/kubeconfig
+    - name: etckubernetesssl
+      hostPath:
+        path: /etc/kubernetes/ssl

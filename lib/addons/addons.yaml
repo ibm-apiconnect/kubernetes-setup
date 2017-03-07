@@ -1,0 +1,73 @@
+#********************************************************* {COPYRIGHT-TOP} ***
+# Licensed Materials - Property of IBM
+# 5725-L30, 5725-Z22
+#
+# (C) Copyright IBM Corporation 2017, 2016
+#
+# All Rights Reserved.
+# US Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#********************************************************* {COPYRIGHT-END} ***
+---
+- hosts: master
+  tasks:
+    - block:
+      - file: path="/etc/kubernetes/addons" state=directory owner=root group=root mode=0775
+
+      - name: wait for cluster
+        command: "/usr/bin/kubectl get nodes"
+        retries: 600
+        delay: 1
+        register: result
+        until: result.rc == 0
+
+      - name: Addon manager manifest
+        template: src="templates/addon-manager.yaml.j2" dest="/etc/kubernetes/addons/addon-manager.yaml" owner=root group=root mode=0644
+      - name: create addon maanger
+        command: "/usr/bin/kubectl apply -f /etc/kubernetes/addons/addon-manager.yaml"
+        retries: 600
+        delay: 1
+        register: result
+        until: result.rc == 0
+        run_once: true
+
+      - name: DNS addon manifest
+        template: src="templates/dns-addon.yaml.j2" dest="/etc/kubernetes/addons/dns-addon.yaml" owner=root group=root mode=0644
+      - name: create DNS addon
+        command: "/usr/bin/kubectl apply -f /etc/kubernetes/addons/dns-addon.yaml"
+        run_once: true
+
+      - name: Dashboard addon manifest
+        template: src="templates/dashboard-addon.yaml" dest="/etc/kubernetes/addons/dashboard-addon.yaml" owner=root group=root mode=0644
+      - name: create Dashboard addon
+        command: "/usr/bin/kubectl apply -f /etc/kubernetes/addons/dashboard-addon.yaml"
+        run_once: true
+
+      - name: Grafana monitoring addon
+        template: src="templates/grafana-influx-monitoring.yaml.j2" dest="/etc/kubernetes/addons/grafana-influx-monitoring.yaml" owner=root group=root mode=0644
+        when: (inventory_hostname in groups['master'][0]) and (k8s.enable_cluster_monitoring)
+      - name: create Dashboard addon
+        command: "/usr/bin/kubectl apply -f /etc/kubernetes/addons/grafana-influx-monitoring.yaml"
+        run_once: true
+
+      - name: Dashboard addon manifest
+        template: src="templates/dashboard-addon.yaml" dest="/etc/kubernetes/addons/dashboard-addon.yaml" owner=root group=root mode=0644
+      - name: create Dashboard addon
+        command: "/usr/bin/kubectl apply -f /etc/kubernetes/addons/dashboard-addon.yaml"
+        run_once: true
+
+      - block:
+        - name: Ingress controller addon manifest
+          template: src="templates/nginx-ingress.yaml" dest="/etc/kubernetes/addons/nginx-ingress.yaml" owner=root group=root mode=0644
+        - name: create Ingress controller addon
+          command: "/usr/bin/kubectl apply -f /etc/kubernetes/addons/nginx-ingress.yaml"
+          run_once: true
+        when: k8s.add_ingress
+
+      - block:
+        - name: Registry addon manifest
+          template: src="templates/registry.yaml" dest="/etc/kubernetes/addons/registry.yaml" owner=root group=root mode=0644
+        - name: create Registry  addon
+          command: "/usr/bin/kubectl apply -f /etc/kubernetes/addons/registry.yaml"
+          run_once: true
+        when: k8s.add_registry

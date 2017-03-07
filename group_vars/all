@@ -1,0 +1,38 @@
+---
+k8s:
+  version: 1.5.3
+  etcd_version: 3.1.2
+  cni_version: 0.4.0
+
+  cluster_name: kubernetes
+  context_name: default
+
+  pod_network: "10.2.0.1/16"
+  service_ip_range: "10.3.0.0/24"
+  service_ip: "10.3.0.1"
+  dns_service_ip: "10.3.0.10"
+  cluster_domain: "cluster.local"
+
+  apiserver_lb: "kube-master.dev"
+  apiserver_server_ip: "10.3.0.1" #LB IP of apiserver
+
+  apiserver_port: 6443
+
+  traffic_iface: enp0s8
+  public_iface: enp0s3
+
+  enable_rbac: true
+
+  enable_cluster_monitoring: true
+  enable_cron_jobs: true
+  enable_pod_security_policy: false
+
+  ntp_servers:
+  - 0.ubuntu.pool.ntp.org
+  - 1.ubuntu.pool.ntp.org
+  - 2.ubuntu.pool.ntp.org
+  - 3.ubuntu.pool.ntp.org
+  - ntp.ubuntu.org
+
+  add_registry: true
+  add_ingress: true
